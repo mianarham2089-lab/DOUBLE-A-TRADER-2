@@ -1,1 +1,13 @@
-
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+playwright>=1.40.0
+websockets>=12.0
+pydantic>=2.0.0
+requests>=2.31.0
+pandas>=2.0.0
+numpy>=1.24.0
+python-dateutil>=2.8.2
+cloudscraper>=1.2.71
+beautifulsoup4>=4.12.0
+loguru>=0.7.2
+python-dotenv>=1.0.0
