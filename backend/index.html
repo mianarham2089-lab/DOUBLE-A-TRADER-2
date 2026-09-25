@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>AI Trading Signal Scanner</title>
+
+<style>
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
+
+body{
+    font-family:Arial,sans-serif;
+    background:#080a0f;
+    color:#fff;
+    min-height:100vh;
+}
+
+header{
+    padding:20px;
+    border-bottom:1px solid #242833;
+    background:#0d1017;
+}
+
+header h1{
+    font-size:24px;
+}
+
+header p{
+    color:#8f98a8;
+    margin-top:6px;
+}
+
+.container{
+    max-width:1200px;
+    margin:auto;
+    padding:20px;
+}
+
+.controls{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:20px;
+}
+
+button{
+    border:1px solid #303746;
+    background:#141923;
+    color:#fff;
+    padding:11px 18px;
+    border-radius:8px;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#202634;
+}
+
+button.active{
+    background:#d4af37;
+    color:#000;
+}
+
+.status{
+    display:flex;
+    gap:15px;
+    flex-wrap:wrap;
+    margin-bottom:20px;
+}
+
+.status-box{
+    background:#11151d;
+    border:1px solid #252b37;
+    border-radius:10px;
+    padding:15px;
+    min-width:160px;
+}
+
+.status-box small{
+    color:#7f8795;
+}
+
+.status-box strong{
+    display:block;
+    margin-top:6px;
+    font-size:18px;
+}
+
+.green{
+    color:#35d07f;
+}
+
+.red{
+    color:#ff5b67;
+}
+
+.gold{
+    color:#d4af37;
+}
+
+.section-title{
+    margin:25px 0 12px;
+    font-size:19px;
+}
+
+.table-wrap{
+    overflow-x:auto;
+    background:#0e1219;
+    border:1px solid #252b37;
+    border-radius:10px;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:900px;
+}
+
+th,td{
+    padding:12px;
+    border-bottom:1px solid #202530;
+    text-align:left;
+}
+
+th{
+    color:#8992a2;
+    font-size:13px;
+}
+
+td{
+    font-size:14px;
+}
+
+.badge{
+    display:inline-block;
+    padding:5px 9px;
+    border-radius:6px;
+    font-size:12px;
+    font-weight:bold;
+}
+
+.call{
+    background:#123d29;
+    color:#45e28c;
+}
+
+.put{
+    background:#421a20;
+    color:#ff6975;
+}
+
+.confirmed{
+    background:#3c3211;
+    color:#e5c84a;
+}
+
+.monitor{
+    background:#172b43;
+    color:#61aefc;
+}
+
+.future{
+    background:#292d35;
+    color:#adb5c3;
+}
+
+.empty{
+    text-align:center;
+    padding:30px;
+    color:#707988;
+}
+
+.actions{
+    display:flex;
+    gap:8px;
+}
+
+.small-btn{
+    padding:6px 9px;
+    font-size:12px;
+}
+
+footer{
+    text-align:center;
+    color:#687181;
+    padding:30px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>AI Trading Signal Scanner</h1>
+    <p>LIVE & OTC market analysis dashboard</p>
+</header>
+
+<div class="container">
+
+    <!-- MARKET SELECTOR -->
+
+    <div class="controls">
+
+        <button
+            id="liveBtn"
+            class="active"
+            onclick="selectMarket('LIVE')">
+            LIVE
+        </button>
+
+        <button
+            id="otcBtn"
+            onclick="selectMarket('OTC')">
+            OTC
+        </button>
+
+        <button onclick="startScanner()">
+            ▶ Start Scanner
+        </button>
+
+        <button onclick="stopScanner()">
+            ■ Stop Scanner
+        </button>
+
+        <button onclick="refreshData()">
+            ↻ Refresh
+        </button>
+
+    </div>
+
+    <!-- STATUS -->
+
+    <div class="status">
+
+        <div class="status-box">
+            <small>API</small>
+            <strong id="apiStatus">
+                Checking...
+            </strong>
+        </div>
+
+        <div class="status-box">
+            <small>Scanner</small>
+            <strong id="scannerStatus">
+                OFF
+            </strong>
+        </div>
+
+        <div class="status-box">
+            <small>Active Signals</small>
+            <strong id="activeSignals">
+                0
+            </strong>
+        </div>
+
+        <div class="status-box">
+            <small>Accuracy</small>
+            <strong id="accuracy">
+                0%
+            </strong>
+        </div>
+
+    </div>
+
+    <!-- FUTURE SIGNALS -->
+
+    <h2 class="section-title">
+        Future Signals
+    </h2>
+
+    <div class="table-wrap">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>Pair</th>
+                    <th>Market</th>
+                    <th>Direction</th>
+                    <th>Score</th>
+                    <th>Confidence</th>
+                    <th>1M</th>
+                    <th>5M</th>
+                    <th>15M</th>
+                    <th>Support</th>
+                    <th>Resistance</th>
+                    <th>Status</th>
+                </tr>
+
+            </thead>
+
+            <tbody id="futureTable">
+
+                <tr>
+                    <td colspan="11" class="empty">
+                        Waiting for signals...
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    <!-- CONFIRMED -->
+
+    <h2 class="section-title">
+        Confirmed Signals
+    </h2>
+
+    <div class="table-wrap">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>Pair</th>
+                    <th>Market</th>
+                    <th>Direction</th>
+                    <th>Score</th>
+                    <th>Confidence</th>
+                    <th>1M</th>
+                    <th>5M</th>
+                    <th>15M</th>
+                    <th>Status</th>
+                    <th>Result</th>
+                </tr>
+
+            </thead>
+
+            <tbody id="confirmedTable">
+
+                <tr>
+                    <td colspan="10" class="empty">
+                        No confirmed signals
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    <!-- STATISTICS -->
+
+    <h2 class="section-title">
+        Statistics
+    </h2>
+
+    <div class="status">
+
+        <div class="status-box">
+            <small>Total Trades</small>
+            <strong id="totalTrades">0</strong>
+        </div>
+
+        <div class="status-box">
+            <small>Wins</small>
+            <strong class="green" id="wins">0</strong>
+        </div>
+
+        <div class="status-box">
+            <small>Losses</small>
+            <strong class="red" id="losses">0</strong>
+        </div>
+
+    </div>
+
+</div>
+
+<footer>
+    AI Signal Scanner
+</footer>
+
+
+<script>
+
+const API_BASE = "";
+
+let selectedMarket = "LIVE";
+
+
+function selectMarket(market){
+
+    selectedMarket = market;
+
+    document
+        .getElementById("liveBtn")
+        .classList
+        .toggle(
+            "active",
+            market === "LIVE"
+        );
+
+    document
+        .getElementById("otcBtn")
+        .classList
+        .toggle(
+            "active",
+            market === "OTC"
+        );
+
+    refreshData();
+}
+
+
+async function getJSON(url){
+
+    try{
+
+        const response =
+            await fetch(
+                API_BASE + url
+            );
+
+        if(!response.ok){
+
+            throw new Error(
+                "HTTP " +
+                response.status
+            );
+        }
+
+        return await response.json();
+
+    }catch(error){
+
+        console.error(error);
+
+        return null;
+    }
+}
+
+
+async function refreshData(){
+
+    const data =
+        await getJSON(
+            "/api/signals"
+        );
+
+    if(!data){
+
+        return;
+    }
+
+    updateScannerStatus(
+        data.scanner
+    );
+
+    updateFutureSignals(
+        data.future_signals || []
+    );
+
+    updateConfirmedSignals(
+        data.confirmed || []
+    );
+
+    updateStatistics(
+        data.statistics || {}
+    );
+}
+
+
+function updateScannerStatus(scanner){
+
+    document
+        .getElementById(
+            "scannerStatus"
+        )
+        .textContent =
+            scanner.running
+            ? "RUNNING"
+            : "OFF";
+
+    document
+        .getElementById(
+            "scannerStatus"
+        )
+        .className =
+            scanner.running
+            ? "green"
+            : "red";
+
+}
+
+
+function updateFutureSignals(signals){
+
+    const table =
+        document.getElementById(
+            "futureTable"
+        );
+
+    const filtered =
+        signals.filter(
+            signal =>
+                signal.market
+                === selectedMarket
+        );
+
+    document
+        .getElementById(
+            "activeSignals"
+        )
+        .textContent =
+            filtered.length;
+
+    if(!filtered.length){
+
+        table.innerHTML = `
+            <tr>
+                <td colspan="11"
+                    class="empty">
+                    No ${selectedMarket}
+                    future signals
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    table.innerHTML =
+        filtered.map(
+            signal => {
+
+                const direction =
+                    signal.direction;
+
+                const directionClass =
+                    direction === "CALL"
+                    ? "call"
+                    : "put";
+
+                const statusClass =
+                    signal.status
+                    .toLowerCase();
+
+                return `
+
+                <tr>
+
+                    <td>
+                        <strong>
+                            ${escapeHTML(
+                                signal.pair
+                            )}
+                        </strong>
+                    </td>
+
+                    <td>
+                        ${signal.market}
+                    </td>
+
+                    <td>
+                        <span class="badge
+                            ${directionClass}">
+                            ${direction}
+                        </span>
+                    </td>
+
+                    <td>
+                        <strong>
+                            ${signal.score}
+                        </strong>
+                    </td>
+
+                    <td>
+                        ${signal.confidence}
+                    </td>
+
+                    <td>
+                        ${signal.trend_1m}
+                    </td>
+
+                    <td>
+                        ${signal.trend_5m}
+                    </td>
+
+                    <td>
+                        ${signal.trend_15m}
+                    </td>
+
+                    <td>
+                        ${formatNumber(
+                            signal.support
+                        )}
+                    </td>
+
+                    <td>
+                        ${formatNumber(
+                            signal.resistance
+                        )}
+                    </td>
+
+                    <td>
+                        <span class="badge
+                            ${statusClass}">
+                            ${signal.status}
+                        </span>
+                    </td>
+
+                </tr>
+
+                `;
+            }
+        ).join("");
+
+}
+
+
+function updateConfirmedSignals(
+    signals
+){
+
+    const table =
+        document.getElementById(
+            "confirmedTable"
+        );
+
+    const filtered =
+        signals.filter(
+            signal =>
+                signal.market
+                === selectedMarket
+        );
+
+    if(!filtered.length){
+
+        table.innerHTML = `
+            <tr>
+                <td colspan="10"
+                    class="empty">
+                    No confirmed
+                    ${selectedMarket}
+                    signals
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    table.innerHTML =
+        filtered.map(
+            signal => {
+
+                const directionClass =
+                    signal.direction
+                    === "CALL"
+                    ? "call"
+                    : "put";
+
+                return `
+
+                <tr>
+
+                    <td>
+                        ${escapeHTML(
+                            signal.pair
+                        )}
+                    </td>
+
+                    <td>
+                        ${signal.market}
+                    </td>
+
+                    <td>
+                        <span class="badge
+                            ${directionClass}">
+                            ${signal.direction}
+                        </span>
+                    </td>
+
+                    <td>
+                        ${signal.score}
+                    </td>
+
+                    <td>
+                        ${signal.confidence}
+                    </td>
+
+                    <td>
+                        ${signal.trend_1m}
+                    </td>
+
+                    <td>
+                        ${signal.trend_5m}
+                    </td>
+
+                    <td>
+                        ${signal.trend_15m}
+                    </td>
+
+                    <td>
+                        <span class="badge confirmed">
+                            CONFIRMED
+                        </span>
+                    </td>
+
+                    <td>
+                        ${signal.result}
+                    </td>
+
+                </tr>
+
+                `;
+
+            }
+        ).join("");
+
+}
+
+
+function updateStatistics(
+    stats
+){
+
+    document
+        .getElementById(
+            "totalTrades"
+        )
+        .textContent =
+            stats.total_trades || 0;
+
+    document
+        .getElementById(
+            "wins"
+        )
+        .textContent =
+            stats.wins || 0;
+
+    document
+        .getElementById(
+            "losses"
+        )
+        .textContent =
+            stats.losses || 0;
+
+    document
+        .getElementById(
+            "accuracy"
+        )
+        .textContent =
+            (stats.accuracy || 0)
+            + "%";
+
+}
+
+
+async function checkAPI(){
+
+    const status =
+        await getJSON(
+            "/api/status"
+        );
+
+    const element =
+        document.getElementById(
+            "apiStatus"
+        );
+
+    if(
+        status &&
+        status.connected
+    ){
+
+        element.textContent =
+            "CONNECTED";
+
+        element.className =
+            "green";
+
+    }else{
+
+        element.textContent =
+            "DISCONNECTED";
+
+        element.className =
+            "red";
+    }
+
+}
+
+
+async function startScanner(){
+
+    await fetch(
+        API_BASE +
+        "/api/scanner/start",
+        {
+            method:"POST"
+        }
+    );
+
+    refreshData();
+}
+
+
+async function stopScanner(){
+
+    await fetch(
+        API_BASE +
+        "/api/scanner/stop",
+        {
+            method:"POST"
+        }
+    );
+
+    refreshData();
+}
+
+
+function formatNumber(value){
+
+    if(
+        value === undefined ||
+        value === null
+    ){
+        return "-";
+    }
+
+    const number =
+        Number(value);
+
+    if(
+        Number.isNaN(number)
+    ){
+        return "-";
+    }
+
+    return number.toFixed(5);
+}
+
+
+function escapeHTML(value){
+
+    return String(value)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+}
+
+
+async function init(){
+
+    await checkAPI();
+
+    await refreshData();
+
+}
+
+
+init();
+
+
+setInterval(
+    async () => {
+
+        await checkAPI();
+
+        await refreshData();
+
+    },
+    5000
+);
+
+</script>
+
+</body>
+</html>
