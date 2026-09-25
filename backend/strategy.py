@@ -28,7 +28,9 @@ class Signal:
     support: float = 0.0
     resistance: float = 0.0
 
-    indicators: Dict[str, float] = field(default_factory=dict)
+    indicators: Dict[str, float] = field(
+        default_factory=dict
+    )
 
 
 # ============================================================
@@ -43,41 +45,56 @@ class StrategyEngine:
         monitor_score: float = 65.0,
         confirmed_score: float = 75.0,
     ):
+
         self.future_score = future_score
         self.monitor_score = monitor_score
         self.confirmed_score = confirmed_score
 
-    # --------------------------------------------------------
+    # ========================================================
     # BASIC HELPERS
-    # --------------------------------------------------------
+    # ========================================================
 
     @staticmethod
-    def closes(candles: List[Candle]) -> List[float]:
-        return [float(c.close) for c in candles]
+    def closes(
+        candles: List[Candle]
+    ) -> List[float]:
+
+        return [
+            float(c.close)
+            for c in candles
+        ]
 
     @staticmethod
-    def ema(values: List[float], period: int) -> Optional[float]:
+    def ema(
+        values: List[float],
+        period: int
+    ) -> Optional[float]:
 
         if len(values) < period:
             return None
 
         multiplier = 2 / (period + 1)
 
-        value = sum(values[:period]) / period
+        value = sum(
+            values[:period]
+        ) / period
 
         for price in values[period:]:
-            value += (price - value) * multiplier
+
+            value += (
+                price - value
+            ) * multiplier
 
         return value
 
-    # --------------------------------------------------------
+    # ========================================================
     # RSI
-    # --------------------------------------------------------
+    # ========================================================
 
     @staticmethod
     def rsi(
         values: List[float],
-        period: int = 14,
+        period: int = 14
     ) -> Optional[float]:
 
         if len(values) < period + 1:
@@ -86,255 +103,456 @@ class StrategyEngine:
         gains = []
         losses = []
 
-        for i in range(1, len(values)):
+        for i in range(
+            1,
+            len(values)
+        ):
 
-            change = values[i] - values[i - 1]
+            change = (
+                values[i]
+                - values[i - 1]
+            )
 
-            gains.append(max(change, 0))
-            losses.append(max(-change, 0))
+            gains.append(
+                max(change, 0)
+            )
 
-        avg_gain = sum(gains[:period]) / period
-        avg_loss = sum(losses[:period]) / period
+            losses.append(
+                max(-change, 0)
+            )
 
-        for i in range(period, len(gains)):
+        avg_gain = (
+            sum(gains[:period])
+            / period
+        )
+
+        avg_loss = (
+            sum(losses[:period])
+            / period
+        )
+
+        for i in range(
+            period,
+            len(gains)
+        ):
 
             avg_gain = (
-                (avg_gain * (period - 1)) + gains[i]
+                (
+                    avg_gain
+                    * (period - 1)
+                )
+                + gains[i]
             ) / period
 
             avg_loss = (
-                (avg_loss * (period - 1)) + losses[i]
+                (
+                    avg_loss
+                    * (period - 1)
+                )
+                + losses[i]
             ) / period
 
         if avg_loss == 0:
             return 100.0
 
-        rs = avg_gain / avg_loss
+        rs = (
+            avg_gain
+            / avg_loss
+        )
 
-        return 100 - (100 / (1 + rs))
+        return 100 - (
+            100 / (1 + rs)
+        )
 
-    # --------------------------------------------------------
+    # ========================================================
     # MACD
-    # --------------------------------------------------------
+    # ========================================================
 
     @classmethod
     def macd(
         cls,
-        values: List[float],
+        values: List[float]
     ) -> Tuple[
         Optional[float],
         Optional[float],
-        Optional[float],
+        Optional[float]
     ]:
 
         if len(values) < 35:
-            return None, None, None
+
+            return (
+                None,
+                None,
+                None
+            )
 
         macd_values = []
 
-        for i in range(26, len(values) + 1):
+        for i in range(
+            26,
+            len(values) + 1
+        ):
 
             section = values[:i]
 
-            ema12 = cls.ema(section, 12)
-            ema26 = cls.ema(section, 26)
+            ema12 = cls.ema(
+                section,
+                12
+            )
 
-            if ema12 is not None and ema26 is not None:
-                macd_values.append(ema12 - ema26)
+            ema26 = cls.ema(
+                section,
+                26
+            )
+
+            if (
+                ema12 is not None
+                and ema26 is not None
+            ):
+
+                macd_values.append(
+                    ema12 - ema26
+                )
 
         if not macd_values:
-            return None, None, None
 
-        macd_line = macd_values[-1]
+            return (
+                None,
+                None,
+                None
+            )
 
-        if len(macd_values) >= 9:
-            signal_line = cls.ema(macd_values, 9)
-        else:
-            signal_line = sum(macd_values) / len(macd_values)
+        macd_line = (
+            macd_values[-1]
+        )
+
+        signal_line = cls.ema(
+            macd_values,
+            9
+        )
 
         if signal_line is None:
-            return None, None, None
 
-        histogram = macd_line - signal_line
+            signal_line = (
+                sum(macd_values)
+                / len(macd_values)
+            )
 
-        return macd_line, signal_line, histogram
+        histogram = (
+            macd_line
+            - signal_line
+        )
 
-    # --------------------------------------------------------
+        return (
+            macd_line,
+            signal_line,
+            histogram
+        )
+
+    # ========================================================
     # ATR
-    # --------------------------------------------------------
+    # ========================================================
 
     @staticmethod
     def atr(
         candles: List[Candle],
-        period: int = 14,
+        period: int = 14
     ) -> Optional[float]:
 
         if len(candles) < period + 1:
             return None
 
-        true_ranges = []
+        ranges = []
 
-        for i in range(1, len(candles)):
+        for i in range(
+            1,
+            len(candles)
+        ):
 
             current = candles[i]
             previous = candles[i - 1]
 
             true_range = max(
-                current.high - current.low,
-                abs(current.high - previous.close),
-                abs(current.low - previous.close),
+                current.high
+                - current.low,
+
+                abs(
+                    current.high
+                    - previous.close
+                ),
+
+                abs(
+                    current.low
+                    - previous.close
+                )
             )
 
-            true_ranges.append(true_range)
+            ranges.append(
+                true_range
+            )
 
-        if len(true_ranges) < period:
+        if len(ranges) < period:
             return None
 
-        return sum(true_ranges[-period:]) / period
+        return (
+            sum(ranges[-period:])
+            / period
+        )
 
-    # --------------------------------------------------------
+    # ========================================================
     # TREND
-    # --------------------------------------------------------
+    # ========================================================
 
     @classmethod
     def trend(
         cls,
-        candles: List[Candle],
+        candles: List[Candle]
     ) -> str:
 
-        if len(candles) < 50:
+        if len(candles) < 20:
             return "UNKNOWN"
 
-        values = cls.closes(candles)
+        values = cls.closes(
+            candles
+        )
 
-        ema20 = cls.ema(values, 20)
-        ema50 = cls.ema(values, 50)
+        ema9 = cls.ema(
+            values,
+            9
+        )
 
-        if ema20 is None or ema50 is None:
+        ema20 = cls.ema(
+            values,
+            20
+        )
+
+        if (
+            ema9 is None
+            or ema20 is None
+        ):
+
             return "UNKNOWN"
 
         recent = values[-5:]
 
-        rising = recent[-1] > recent[0]
-        falling = recent[-1] < recent[0]
+        rising = (
+            recent[-1]
+            > recent[0]
+        )
 
-        if ema20 > ema50 and rising:
+        falling = (
+            recent[-1]
+            < recent[0]
+        )
+
+        if (
+            ema9 > ema20
+            and rising
+        ):
+
             return "UP"
 
-        if ema20 < ema50 and falling:
+        if (
+            ema9 < ema20
+            and falling
+        ):
+
             return "DOWN"
 
         return "SIDEWAYS"
 
-    # --------------------------------------------------------
+    # ========================================================
     # SUPPORT / RESISTANCE
-    # --------------------------------------------------------
+    # ========================================================
 
     @staticmethod
     def support_resistance(
         candles: List[Candle],
-        lookback: int = 30,
+        lookback: int = 30
     ) -> Dict[str, float]:
 
         if not candles:
+
             return {
                 "support": 0.0,
-                "resistance": 0.0,
+                "resistance": 0.0
             }
 
-        recent = candles[-lookback:]
+        recent = candles[
+            -lookback:
+        ]
 
         return {
-            "support": min(c.low for c in recent),
-            "resistance": max(c.high for c in recent),
+            "support": min(
+                c.low
+                for c in recent
+            ),
+
+            "resistance": max(
+                c.high
+                for c in recent
+            )
         }
 
-    # --------------------------------------------------------
-    # CANDLE / PRICE ACTION
-    # --------------------------------------------------------
+    # ========================================================
+    # PRICE ACTION
+    # ========================================================
 
     @staticmethod
     def candle_signal(
-        candles: List[Candle],
-    ) -> Tuple[Optional[str], List[str]]:
+        candles: List[Candle]
+    ) -> Tuple[
+        Optional[str],
+        List[str]
+    ]:
 
         if len(candles) < 3:
-            return None, []
+
+            return (
+                None,
+                []
+            )
 
         current = candles[-1]
         previous = candles[-2]
 
-        body = abs(current.close - current.open)
-        candle_range = current.high - current.low
-
-        if candle_range <= 0:
-            return None, []
-
-        upper_wick = (
+        candle_range = (
             current.high
-            - max(current.open, current.close)
-        )
-
-        lower_wick = (
-            min(current.open, current.close)
             - current.low
         )
 
-        body_ratio = body / candle_range
+        if candle_range <= 0:
+
+            return (
+                None,
+                []
+            )
+
+        body = abs(
+            current.close
+            - current.open
+        )
+
+        upper_wick = (
+            current.high
+            - max(
+                current.open,
+                current.close
+            )
+        )
+
+        lower_wick = (
+            min(
+                current.open,
+                current.close
+            )
+            - current.low
+        )
+
+        body_ratio = (
+            body / candle_range
+        )
 
         reasons = []
 
-        # Bullish momentum
+        # Strong bullish candle
         if (
-            current.close > current.open
+            current.close
+            > current.open
             and body_ratio >= 0.55
-            and current.close > previous.close
+            and current.close
+            > previous.close
         ):
-            reasons.append("Bullish momentum candle")
-            return "UP", reasons
 
-        # Bearish momentum
+            reasons.append(
+                "Strong bullish candle"
+            )
+
+            return (
+                "UP",
+                reasons
+            )
+
+        # Strong bearish candle
         if (
-            current.close < current.open
+            current.close
+            < current.open
             and body_ratio >= 0.55
-            and current.close < previous.close
+            and current.close
+            < previous.close
         ):
-            reasons.append("Bearish momentum candle")
-            return "DOWN", reasons
+
+            reasons.append(
+                "Strong bearish candle"
+            )
+
+            return (
+                "DOWN",
+                reasons
+            )
 
         # Bullish rejection
         if (
-            lower_wick > body * 1.5
-            and lower_wick > upper_wick
+            lower_wick
+            > body * 1.5
+            and lower_wick
+            > upper_wick
         ):
-            reasons.append("Bullish rejection")
-            return "UP", reasons
+
+            reasons.append(
+                "Bullish rejection"
+            )
+
+            return (
+                "UP",
+                reasons
+            )
 
         # Bearish rejection
         if (
-            upper_wick > body * 1.5
-            and upper_wick > lower_wick
+            upper_wick
+            > body * 1.5
+            and upper_wick
+            > lower_wick
         ):
-            reasons.append("Bearish rejection")
-            return "DOWN", reasons
 
-        return None, reasons
+            reasons.append(
+                "Bearish rejection"
+            )
 
-    # --------------------------------------------------------
+            return (
+                "DOWN",
+                reasons
+            )
+
+        return (
+            None,
+            reasons
+        )
+
+    # ========================================================
     # MOMENTUM
-    # --------------------------------------------------------
+    # ========================================================
 
     @staticmethod
     def momentum(
         candles: List[Candle],
-        lookback: int = 5,
+        lookback: int = 5
     ) -> str:
 
-        if len(candles) < lookback + 1:
+        if len(candles) < (
+            lookback + 1
+        ):
+
             return "UNKNOWN"
 
-        old_price = candles[-lookback - 1].close
-        current_price = candles[-1].close
+        old_price = candles[
+            -lookback - 1
+        ].close
+
+        current_price = candles[
+            -1
+        ].close
 
         if current_price > old_price:
             return "UP"
@@ -344,14 +562,14 @@ class StrategyEngine:
 
         return "FLAT"
 
-    # --------------------------------------------------------
+    # ========================================================
     # BREAKOUT
-    # --------------------------------------------------------
+    # ========================================================
 
     @staticmethod
     def breakout_signal(
         candles: List[Candle],
-        levels: Dict[str, float],
+        levels: Dict[str, float]
     ) -> Optional[str]:
 
         if len(candles) < 3:
@@ -360,46 +578,175 @@ class StrategyEngine:
         current = candles[-1]
         previous = candles[-2]
 
-        support = levels["support"]
-        resistance = levels["resistance"]
+        support = levels[
+            "support"
+        ]
+
+        resistance = levels[
+            "resistance"
+        ]
 
         if (
-            previous.close <= resistance
-            and current.close > resistance
+            previous.close
+            <= resistance
+            and current.close
+            > resistance
         ):
+
             return "UP"
 
         if (
-            previous.close >= support
-            and current.close < support
+            previous.close
+            >= support
+            and current.close
+            < support
         ):
+
             return "DOWN"
 
         return None
 
-    # --------------------------------------------------------
-    # SCORE ANALYSIS
-    # --------------------------------------------------------
+    # ========================================================
+    # MULTI TIMEFRAME
+    # ========================================================
+
+    @classmethod
+    def timeframe_alignment(
+        cls,
+        candles_1m: List[Candle],
+        candles_5m: List[Candle],
+        candles_15m: List[Candle]
+    ) -> Tuple[
+        str,
+        float,
+        List[str]
+    ]:
+
+        trend_1m = cls.trend(
+            candles_1m
+        )
+
+        trend_5m = cls.trend(
+            candles_5m
+        )
+
+        trend_15m = cls.trend(
+            candles_15m
+        )
+
+        bonus = 0.0
+        reasons = []
+
+        trends = [
+            trend_1m,
+            trend_5m,
+            trend_15m
+        ]
+
+        up_count = trends.count(
+            "UP"
+        )
+
+        down_count = trends.count(
+            "DOWN"
+        )
+
+        if up_count == 3:
+
+            bonus += 20
+            reasons.append(
+                "1M/5M/15M all UP"
+            )
+
+            return (
+                "UP",
+                bonus,
+                reasons
+            )
+
+        if down_count == 3:
+
+            bonus += 20
+            reasons.append(
+                "1M/5M/15M all DOWN"
+            )
+
+            return (
+                "DOWN",
+                bonus,
+                reasons
+            )
+
+        if up_count >= 2:
+
+            bonus += 10
+            reasons.append(
+                "Multi-timeframe bullish"
+            )
+
+            return (
+                "UP",
+                bonus,
+                reasons
+            )
+
+        if down_count >= 2:
+
+            bonus += 10
+            reasons.append(
+                "Multi-timeframe bearish"
+            )
+
+            return (
+                "DOWN",
+                bonus,
+                reasons
+            )
+
+        return (
+            "MIXED",
+            0.0,
+            [
+                "Timeframes are mixed"
+            ]
+        )
+
+    # ========================================================
+    # ANALYSIS
+    # ========================================================
 
     def analyze(
         self,
-        candles: List[Candle],
-        higher_timeframe_candles: Optional[
+        candles_1m: List[Candle],
+        candles_5m: Optional[
             List[Candle]
         ] = None,
+        candles_15m: Optional[
+            List[Candle]
+        ] = None
     ) -> Signal:
 
-        if len(candles) < 20:
+        if len(candles_1m) < 20:
 
             return Signal(
-                direction="",
+                direction="WAIT",
                 score=0.0,
                 confidence="LOW",
                 status="NO_DATA",
-                reasons=["Not enough candle history"],
+                reasons=[
+                    "Not enough 1M candle data"
+                ]
             )
 
-        values = self.closes(candles)
+        if candles_5m is None:
+            candles_5m = []
+
+        if candles_15m is None:
+            candles_15m = []
+
+        values = self.closes(
+            candles_1m
+        )
 
         up = 0.0
         down = 0.0
@@ -407,116 +754,191 @@ class StrategyEngine:
         up_reasons = []
         down_reasons = []
 
-        # ====================================================
+        # ----------------------------------------------------
         # TREND
-        # ====================================================
+        # ----------------------------------------------------
 
-        current_trend = self.trend(candles)
+        trend_1m = self.trend(
+            candles_1m
+        )
 
-        if current_trend == "UP":
+        if trend_1m == "UP":
 
-            up += 20
-            up_reasons.append("Bullish trend")
+            up += 15
 
-        elif current_trend == "DOWN":
+            up_reasons.append(
+                "1M uptrend"
+            )
 
-            down += 20
-            down_reasons.append("Bearish trend")
+        elif trend_1m == "DOWN":
 
-        # ====================================================
-        # EMA ALIGNMENT
-        # ====================================================
+            down += 15
 
-        ema9 = self.ema(values, 9)
-        ema20 = self.ema(values, 20)
-        ema50 = self.ema(values, 50)
+            down_reasons.append(
+                "1M downtrend"
+            )
 
-        if ema9 and ema20 and ema50:
+        # ----------------------------------------------------
+        # EMA
+        # ----------------------------------------------------
 
-            if ema9 > ema20 > ema50:
+        ema9 = self.ema(
+            values,
+            9
+        )
+
+        ema20 = self.ema(
+            values,
+            20
+        )
+
+        ema50 = self.ema(
+            values,
+            50
+        )
+
+        if (
+            ema9 is not None
+            and ema20 is not None
+            and ema50 is not None
+        ):
+
+            if (
+                ema9
+                > ema20
+                > ema50
+            ):
 
                 up += 15
-                up_reasons.append("EMA 9/20/50 aligned UP")
 
-            elif ema9 < ema20 < ema50:
+                up_reasons.append(
+                    "EMA 9/20/50 bullish alignment"
+                )
+
+            elif (
+                ema9
+                < ema20
+                < ema50
+            ):
 
                 down += 15
-                down_reasons.append("EMA 9/20/50 aligned DOWN")
 
-        # ====================================================
+                down_reasons.append(
+                    "EMA 9/20/50 bearish alignment"
+                )
+
+        # ----------------------------------------------------
         # RSI
-        # ====================================================
+        # ----------------------------------------------------
 
-        rsi_value = self.rsi(values)
+        rsi_value = self.rsi(
+            values
+        )
 
         if rsi_value is not None:
 
-            if 50 <= rsi_value <= 68:
+            if (
+                50
+                <= rsi_value
+                <= 68
+            ):
 
-                up += 10
+                up += 8
+
                 up_reasons.append(
                     f"RSI bullish ({rsi_value:.1f})"
                 )
 
-            elif 32 <= rsi_value < 50:
+            elif (
+                32
+                <= rsi_value
+                < 50
+            ):
 
-                down += 10
+                down += 8
+
                 down_reasons.append(
                     f"RSI bearish ({rsi_value:.1f})"
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # MACD
-        # ====================================================
+        # ----------------------------------------------------
 
-        macd_line, signal_line, histogram = self.macd(
-            values
-        )
+        (
+            macd_line,
+            macd_signal,
+            histogram
+        ) = self.macd(values)
 
         if (
             macd_line is not None
-            and signal_line is not None
+            and macd_signal is not None
+            and histogram is not None
         ):
 
             if (
-                macd_line > signal_line
+                macd_line
+                > macd_signal
                 and histogram > 0
             ):
 
-                up += 10
-                up_reasons.append("MACD bullish")
+                up += 8
+
+                up_reasons.append(
+                    "MACD bullish"
+                )
 
             elif (
-                macd_line < signal_line
+                macd_line
+                < macd_signal
                 and histogram < 0
             ):
 
-                down += 10
-                down_reasons.append("MACD bearish")
+                down += 8
 
-        # ====================================================
+                down_reasons.append(
+                    "MACD bearish"
+                )
+
+        # ----------------------------------------------------
         # SUPPORT / RESISTANCE
-        # ====================================================
+        # ----------------------------------------------------
 
-        levels = self.support_resistance(candles)
+        levels = (
+            self.support_resistance(
+                candles_1m
+            )
+        )
 
-        support = levels["support"]
-        resistance = levels["resistance"]
+        support = levels[
+            "support"
+        ]
 
-        price = candles[-1].close
+        resistance = levels[
+            "resistance"
+        ]
 
-        distance = resistance - support
+        price = candles_1m[
+            -1
+        ].close
 
-        if distance > 0:
+        price_range = (
+            resistance
+            - support
+        )
+
+        if price_range > 0:
 
             position = (
                 (price - support)
-                / distance
+                / price_range
             )
 
             if position <= 0.25:
 
                 up += 10
+
                 up_reasons.append(
                     "Price near support"
                 )
@@ -524,140 +946,193 @@ class StrategyEngine:
             elif position >= 0.75:
 
                 down += 10
+
                 down_reasons.append(
                     "Price near resistance"
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # PRICE ACTION
-        # ====================================================
+        # ----------------------------------------------------
 
-        candle_direction, candle_reasons = (
-            self.candle_signal(candles)
+        (
+            candle_direction,
+            candle_reasons
+        ) = self.candle_signal(
+            candles_1m
         )
 
         if candle_direction == "UP":
 
             up += 10
-            up_reasons.extend(candle_reasons)
+
+            up_reasons.extend(
+                candle_reasons
+            )
 
         elif candle_direction == "DOWN":
 
             down += 10
-            down_reasons.extend(candle_reasons)
 
-        # ====================================================
+            down_reasons.extend(
+                candle_reasons
+            )
+
+        # ----------------------------------------------------
         # MOMENTUM
-        # ====================================================
+        # ----------------------------------------------------
 
-        momentum = self.momentum(candles)
+        momentum = self.momentum(
+            candles_1m
+        )
 
         if momentum == "UP":
 
             up += 5
-            up_reasons.append("Momentum UP")
+
+            up_reasons.append(
+                "Short-term momentum UP"
+            )
 
         elif momentum == "DOWN":
 
             down += 5
-            down_reasons.append("Momentum DOWN")
 
-        # ====================================================
+            down_reasons.append(
+                "Short-term momentum DOWN"
+            )
+
+        # ----------------------------------------------------
         # BREAKOUT
-        # ====================================================
+        # ----------------------------------------------------
 
-        breakout = self.breakout_signal(
-            candles,
-            levels,
+        breakout = (
+            self.breakout_signal(
+                candles_1m,
+                levels
+            )
         )
 
         if breakout == "UP":
 
             up += 10
-            up_reasons.append("Resistance breakout")
+
+            up_reasons.append(
+                "Resistance breakout"
+            )
 
         elif breakout == "DOWN":
 
             down += 10
-            down_reasons.append("Support breakdown")
 
-        # ====================================================
-        # HIGHER TIMEFRAME
-        # ====================================================
-
-        higher_trend = "NOT_AVAILABLE"
-
-        if higher_timeframe_candles:
-
-            higher_trend = self.trend(
-                higher_timeframe_candles
+            down_reasons.append(
+                "Support breakdown"
             )
 
-            if (
-                higher_trend == "UP"
-                and up > down
-            ):
+        # ----------------------------------------------------
+        # MULTI-TIMEFRAME CONFIRMATION
+        # ----------------------------------------------------
 
-                up += 10
-                up_reasons.append(
-                    "Higher timeframe confirms UP"
+        if (
+            candles_5m
+            and candles_15m
+        ):
+
+            (
+                mtf_direction,
+                mtf_bonus,
+                mtf_reasons
+            ) = self.timeframe_alignment(
+                candles_1m,
+                candles_5m,
+                candles_15m
+            )
+
+            if mtf_direction == "UP":
+
+                up += mtf_bonus
+                up_reasons.extend(
+                    mtf_reasons
                 )
 
-            elif (
-                higher_trend == "DOWN"
-                and down > up
-            ):
+            elif mtf_direction == "DOWN":
 
-                down += 10
-                down_reasons.append(
-                    "Higher timeframe confirms DOWN"
+                down += mtf_bonus
+                down_reasons.extend(
+                    mtf_reasons
                 )
 
-        # ====================================================
-        # CHOOSE DIRECTION
-        # ====================================================
+        # ----------------------------------------------------
+        # FINAL DIRECTION
+        # ----------------------------------------------------
 
         if up > down:
 
-            direction = "CALL"
+            direction = "UP"
             score = up
             reasons = up_reasons
 
         elif down > up:
 
-            direction = "PUT"
+            direction = "DOWN"
             score = down
             reasons = down_reasons
 
         else:
 
             return Signal(
-                direction="",
+                direction="WAIT",
                 score=0.0,
                 confidence="LOW",
-                status="MONITOR",
+                status="WAIT",
                 reasons=[
-                    "No clear directional advantage"
+                    "No directional advantage"
                 ],
-                trend=current_trend,
+                trend=trend_1m,
                 support=support,
-                resistance=resistance,
+                resistance=resistance
             )
 
-        # ====================================================
-        # CONFLICT / DIFFERENCE
-        # ====================================================
+        # ----------------------------------------------------
+        # CONFLICT FILTER
+        # ----------------------------------------------------
 
-        difference = abs(up - down)
+        difference = abs(
+            up - down
+        )
 
-        # Strong opposition means future monitoring,
-        # not immediate trade.
-        if difference < 10:
+        if difference < 8:
 
-            status = "FUTURE"
-            confidence = "LOW"
+            return Signal(
+                direction="WAIT",
+                score=round(
+                    score,
+                    2
+                ),
+                confidence="LOW",
+                status="WAIT",
+                reasons=[
+                    "Directional conflict"
+                ],
+                trend=trend_1m,
+                support=support,
+                resistance=resistance
+            )
 
-        elif score >= self.confirmed_score:
+        # ----------------------------------------------------
+        # SCORE CAP
+        # ----------------------------------------------------
+
+        score = min(
+            score,
+            100.0
+        )
+
+        # ----------------------------------------------------
+        # STATUS
+        # ----------------------------------------------------
+
+        if score >= self.confirmed_score:
 
             status = "CONFIRMED"
             confidence = "HIGH"
@@ -674,38 +1149,92 @@ class StrategyEngine:
 
         else:
 
-            status = "MONITOR"
+            status = "WAIT"
             confidence = "LOW"
 
+        # ----------------------------------------------------
+        # INDICATORS
+        # ----------------------------------------------------
+
+        atr_value = self.atr(
+            candles_1m
+        )
+
         indicators = {
-            "ema9": round(ema9 or 0.0, 8),
-            "ema20": round(ema20 or 0.0, 8),
-            "ema50": round(ema50 or 0.0, 8),
-            "rsi": round(rsi_value or 0.0, 2),
-            "macd": round(macd_line or 0.0, 8),
-            "macd_signal": round(
-                signal_line or 0.0,
-                8,
-            ),
-            "macd_histogram": round(
-                histogram or 0.0,
-                8,
-            ),
-            "atr": round(
-                self.atr(candles) or 0.0,
-                8,
-            ),
-            "higher_trend": higher_trend,
+
+            "ema9":
+                round(
+                    ema9 or 0.0,
+                    8
+                ),
+
+            "ema20":
+                round(
+                    ema20 or 0.0,
+                    8
+                ),
+
+            "ema50":
+                round(
+                    ema50 or 0.0,
+                    8
+                ),
+
+            "rsi":
+                round(
+                    rsi_value or 0.0,
+                    2
+                ),
+
+            "macd":
+                round(
+                    macd_line or 0.0,
+                    8
+                ),
+
+            "macd_signal":
+                round(
+                    macd_signal or 0.0,
+                    8
+                ),
+
+            "macd_histogram":
+                round(
+                    histogram or 0.0,
+                    8
+                ),
+
+            "atr":
+                round(
+                    atr_value or 0.0,
+                    8
+                )
         }
 
+        # ----------------------------------------------------
+        # RETURN
+        # ----------------------------------------------------
+
         return Signal(
+
             direction=direction,
-            score=round(min(score, 100.0), 2),
+
+            score=round(
+                score,
+                2
+            ),
+
             confidence=confidence,
+
             status=status,
+
             reasons=reasons,
-            trend=current_trend,
+
+            trend=trend_1m,
+
             support=support,
+
             resistance=resistance,
-            indicators=indicators,
+
+            indicators=indicators
         )
