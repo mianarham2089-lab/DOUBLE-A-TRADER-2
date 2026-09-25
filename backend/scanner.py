@@ -3,9 +3,10 @@
 import asyncio
 import time
 from dataclasses import dataclass, asdict, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
-from strategy import Candle, StrategyEngine
+from strategy import StrategyEngine
+from market_data import QuotexMarketData
 
 
 # ============================================================
@@ -14,10 +15,12 @@ from strategy import Candle, StrategyEngine
 
 @dataclass
 class FutureSignal:
+
     pair: str
     market: str
 
     direction: str
+
     score: float
     confidence: str
     status: str
@@ -29,7 +32,9 @@ class FutureSignal:
     support: float = 0.0
     resistance: float = 0.0
 
-    reasons: List[str] = field(default_factory=list)
+    reasons: List[str] = field(
+        default_factory=list
+    )
 
     trend_1m: str = "UNKNOWN"
     trend_5m: str = "UNKNOWN"
@@ -42,6 +47,7 @@ class FutureSignal:
     expires_at: int = 0
 
     result: str = "PENDING"
+
     confirmations: int = 0
 
     def to_dict(self):
@@ -57,17 +63,18 @@ class MarketScanner:
     def __init__(
         self,
         api_client=None,
-
         future_score: float = 55.0,
         monitor_score: float = 65.0,
         confirmed_score: float = 75.0,
-
         signal_ttl_seconds: int = 180,
         max_future_signals: int = 50,
         rescan_interval: int = 10,
     ):
 
-        self.api_client = api_client
+        self.api_client = (
+            api_client
+            or QuotexMarketData()
+        )
 
         self.strategy = StrategyEngine(
             future_score=future_score,
@@ -75,674 +82,522 @@ class MarketScanner:
             confirmed_score=confirmed_score,
         )
 
-        # ====================================================
-        # MARKET TYPES
-        # ====================================================
+        self.signal_ttl_seconds = (
+            signal_ttl_seconds
+        )
+
+        self.max_future_signals = (
+            max_future_signals
+        )
+
+        self.rescan_interval = (
+            rescan_interval
+        )
+
+        self.future_signals: Dict[
+            str, FutureSignal
+        ] = {}
+
+        self.history: List[
+            FutureSignal
+        ] = []
+
+        self.running = False
+
+        self.last_scan = 0
+
+        self.scan_count = 0
 
         self.live_enabled = True
         self.otc_enabled = True
 
-        # ====================================================
-        # SETTINGS
-        # ====================================================
-
-        self.signal_ttl_seconds = signal_ttl_seconds
-        self.max_future_signals = max_future_signals
-        self.rescan_interval = rescan_interval
-
-        # ====================================================
-        # SIGNAL STORAGE
-        # ====================================================
-
-        self.future_signals: Dict[str, FutureSignal] = {}
-
-        self.confirmed_signals: Dict[str, FutureSignal] = {}
-
-        self.history: List[FutureSignal] = []
-
-        # ====================================================
-        # STATE
-        # ====================================================
-
-        self.running = False
-        self.last_scan = 0
-        self.scan_count = 0
-
         self._task = None
-
-        # ====================================================
-        # STATISTICS
-        # ====================================================
-
-        self.total_trades = 0
-        self.wins = 0
-        self.losses = 0
 
     # ========================================================
     # MARKET CONTROL
     # ========================================================
 
-    def set_live_enabled(self, enabled: bool):
-        self.live_enabled = bool(enabled)
-
-    def set_otc_enabled(self, enabled: bool):
-        self.otc_enabled = bool(enabled)
-
-    # ========================================================
-    # KEY
-    # ========================================================
-
-    @staticmethod
-    def signal_key(pair: str, market: str) -> str:
-        return f"{market}:{pair}"
-
-    # ========================================================
-    # PAIRS
-    # ========================================================
-
-    def get_pairs(self, market: str) -> List[str]:
-
-        if not self.api_client:
-            return []
-
-        try:
-
-            if hasattr(self.api_client, "get_pairs"):
-                pairs = self.api_client.get_pairs(market)
-
-                if asyncio.iscoroutine(pairs):
-                    return []
-
-                return list(pairs or [])
-
-            if hasattr(self.api_client, "pairs"):
-                pairs = self.api_client.pairs
-
-                if isinstance(pairs, dict):
-                    return list(
-                        pairs.get(market, [])
-                    )
-
-                return list(pairs or [])
-
-        except Exception:
-            return []
-
-        return []
-
-    # ========================================================
-    # CANDLE DATA
-    # ========================================================
-
-    async def get_candles(
+    def set_live_enabled(
         self,
-        pair: str,
-        market: str,
-        timeframe: str,
-        limit: int = 100,
-    ) -> List[Candle]:
+        enabled: bool,
+    ):
 
-        if not self.api_client:
-            return []
+        self.live_enabled = bool(
+            enabled
+        )
 
-        try:
+    def set_otc_enabled(
+        self,
+        enabled: bool,
+    ):
 
-            method = None
-
-            if hasattr(
-                self.api_client,
-                "get_candles"
-            ):
-                method = self.api_client.get_candles
-
-            elif hasattr(
-                self.api_client,
-                "fetch_candles"
-            ):
-                method = self.api_client.fetch_candles
-
-            if method is None:
-                return []
-
-            try:
-                result = method(
-                    pair=pair,
-                    market=market,
-                    timeframe=timeframe,
-                    limit=limit,
-                )
-
-            except TypeError:
-
-                result = method(
-                    pair,
-                    market,
-                    timeframe,
-                    limit,
-                )
-
-            if asyncio.iscoroutine(result):
-                result = await result
-
-            return self.normalize_candles(result)
-
-        except Exception as error:
-
-            print(
-                f"Candle error "
-                f"{market} {pair} {timeframe}: "
-                f"{error}"
-            )
-
-            return []
+        self.otc_enabled = bool(
+            enabled
+        )
 
     # ========================================================
-    # NORMALIZE CANDLES
+    # MARKET TYPE
     # ========================================================
 
     @staticmethod
-    def normalize_candles(
-        data: Any
-    ) -> List[Candle]:
+    def market_type(symbol: str) -> str:
+
+        if symbol.lower().endswith(
+            "_otc"
+        ):
+            return "OTC"
+
+        return "LIVE"
+
+    # ========================================================
+    # PAIR FILTER
+    # ========================================================
+
+    def allowed_pair(
+        self,
+        symbol: str,
+    ) -> bool:
+
+        market = self.market_type(
+            symbol
+        )
+
+        if market == "LIVE":
+            return self.live_enabled
+
+        if market == "OTC":
+            return self.otc_enabled
+
+        return False
+
+    # ========================================================
+    # NORMALIZE MARKET RESPONSE
+    # ========================================================
+
+    @staticmethod
+    def extract_symbols(
+        data
+    ) -> List[str]:
 
         if not data:
             return []
 
-        candles = []
+        if isinstance(data, list):
 
-        for item in data:
+            result = []
 
-            try:
+            for item in data:
 
-                if isinstance(item, Candle):
+                if isinstance(item, str):
+                    result.append(item)
 
-                    candles.append(item)
-                    continue
+                elif isinstance(item, dict):
 
-                if isinstance(item, dict):
+                    symbol = (
+                        item.get("symbol")
+                        or item.get("pair")
+                        or item.get("name")
+                    )
 
-                    candles.append(
-                        Candle(
-                            open=float(
-                                item["open"]
-                            ),
-                            high=float(
-                                item["high"]
-                            ),
-                            low=float(
-                                item["low"]
-                            ),
-                            close=float(
-                                item["close"]
-                            ),
-                            timestamp=item.get(
-                                "timestamp"
-                            ),
+                    if symbol:
+                        result.append(
+                            str(symbol)
+                        )
+
+            return result
+
+        if isinstance(data, dict):
+
+            for key in (
+                "data",
+                "markets",
+                "assets",
+                "symbols",
+                "pairs",
+            ):
+
+                if key in data:
+
+                    return (
+                        MarketScanner
+                        .extract_symbols(
+                            data[key]
                         )
                     )
 
-                    continue
-
-                if isinstance(item, (list, tuple)):
-
-                    if len(item) >= 4:
-
-                        timestamp = (
-                            item[4]
-                            if len(item) > 4
-                            else None
-                        )
-
-                        candles.append(
-                            Candle(
-                                open=float(item[0]),
-                                high=float(item[1]),
-                                low=float(item[2]),
-                                close=float(item[3]),
-                                timestamp=timestamp,
-                            )
-                        )
-
-            except (
-                ValueError,
-                TypeError,
-                KeyError,
-                IndexError,
-            ):
-                continue
-
-        return candles
+        return []
 
     # ========================================================
-    # MULTI TIMEFRAME ANALYSIS
+    # GET PAIRS
     # ========================================================
 
-    async def analyze_pair(
+    def get_pairs(self) -> List[str]:
+
+        try:
+
+            markets = (
+                self.api_client
+                .get_markets()
+            )
+
+            symbols = (
+                self.extract_symbols(
+                    markets
+                )
+            )
+
+            return [
+                symbol
+                for symbol in symbols
+                if self.allowed_pair(
+                    symbol
+                )
+            ]
+
+        except Exception as error:
+
+            print(
+                "Market list error:",
+                error
+            )
+
+            return []
+
+    # ========================================================
+    # TREND FROM CANDLES
+    # ========================================================
+
+    def get_trend(
+        self,
+        candles,
+    ) -> str:
+
+        try:
+
+            return self.strategy.trend(
+                candles
+            )
+
+        except Exception:
+
+            return "UNKNOWN"
+
+    # ========================================================
+    # CREATE SIGNAL
+    # ========================================================
+
+    def create_signal(
         self,
         pair: str,
-        market: str,
+        candles_1m,
+        candles_5m=None,
+        candles_15m=None,
     ) -> Optional[FutureSignal]:
 
-        candles_1m = await self.get_candles(
-            pair,
-            market,
-            "1m",
-            150,
-        )
-
-        if len(candles_1m) < 50:
+        if len(candles_1m) < 20:
             return None
 
-        candles_5m = await self.get_candles(
-            pair,
-            market,
-            "5m",
-            100,
+        higher = (
+            candles_5m
+            if candles_5m
+            else None
         )
 
-        candles_15m = await self.get_candles(
-            pair,
-            market,
-            "15m",
-            100,
-        )
-
-        result = self.strategy.analyze(
-            candles_1m,
-            higher_timeframe_candles=(
-                candles_5m
-                if candles_5m
-                else None
-            ),
-        )
-
-        # ----------------------------------------------------
-        # No useful direction
-        # ----------------------------------------------------
-
-        if not result.direction:
-            return None
-
-        now = int(time.time())
-
-        levels = (
-            self.strategy.support_resistance(
-                candles_1m
+        analysis = (
+            self.strategy.analyze(
+                candles_1m,
+                higher
             )
         )
 
-        trend_1m = result.trend
+        if not analysis.direction:
+            return None
+
+        now = int(
+            time.time()
+        )
+
+        market = (
+            self.market_type(pair)
+        )
+
+        trend_1m = self.get_trend(
+            candles_1m
+        )
 
         trend_5m = (
-            self.strategy.trend(candles_5m)
+            self.get_trend(
+                candles_5m
+            )
             if candles_5m
             else "UNKNOWN"
         )
 
         trend_15m = (
-            self.strategy.trend(candles_15m)
+            self.get_trend(
+                candles_15m
+            )
             if candles_15m
             else "UNKNOWN"
         )
 
-        momentum = (
-            self.strategy.momentum(
-                candles_1m
-            )
-        )
-
-        atr = (
-            self.strategy.atr(
-                candles_1m
-            )
-            or 0.0
-        )
-
-        key = self.signal_key(
-            pair,
-            market,
-        )
-
-        old_signal = (
-            self.future_signals.get(key)
-            or self.confirmed_signals.get(key)
-        )
-
-        confirmations = 1
-
-        if old_signal:
-
-            same_direction = (
-                old_signal.direction
-                == result.direction
-            )
-
-            if same_direction:
-                confirmations = (
-                    old_signal.confirmations + 1
-                )
-
-        # ----------------------------------------------------
-        # Multi-timeframe confirmation
-        # ----------------------------------------------------
-
-        score = float(result.score)
-
-        if (
-            result.direction == "CALL"
-            and trend_5m == "UP"
-        ):
-            score += 5
-
-        elif (
-            result.direction == "PUT"
-            and trend_5m == "DOWN"
-        ):
-            score += 5
-
-        if (
-            result.direction == "CALL"
-            and trend_15m == "UP"
-        ):
-            score += 5
-
-        elif (
-            result.direction == "PUT"
-            and trend_15m == "DOWN"
-        ):
-            score += 5
-
-        # Opposite higher timeframe = reduce confidence
-        if (
-            result.direction == "CALL"
-            and trend_15m == "DOWN"
-        ):
-            score -= 5
-
-        elif (
-            result.direction == "PUT"
-            and trend_15m == "UP"
-        ):
-            score -= 5
-
-        score = max(
-            0.0,
-            min(score, 100.0)
-        )
-
-        # ----------------------------------------------------
-        # Status
-        # ----------------------------------------------------
-
-        if score >= 80:
-
-            status = "CONFIRMED"
-            confidence = "HIGH"
-
-        elif score >= 65:
-
-            status = "MONITOR"
-            confidence = "MEDIUM"
-
-        elif score >= 55:
-
-            status = "FUTURE"
-            confidence = "LOW"
-
-        else:
-
-            return None
-
-        # ----------------------------------------------------
-        # Expiry
-        # ----------------------------------------------------
-
-        expires_at = (
-            now +
-            self.signal_ttl_seconds
+        atr = analysis.indicators.get(
+            "atr",
+            0.0
         )
 
         signal = FutureSignal(
 
             pair=pair,
+
             market=market,
 
-            direction=result.direction,
+            direction=(
+                analysis.direction
+            ),
 
-            score=round(score, 2),
+            score=float(
+                analysis.score
+            ),
 
-            confidence=confidence,
-            status=status,
+            confidence=(
+                analysis.confidence
+            ),
+
+            status=(
+                analysis.status
+            ),
 
             signal_time=now,
 
             expiry_minutes=1,
 
-            support=levels["support"],
-            resistance=levels["resistance"],
+            support=float(
+                analysis.support
+            ),
+
+            resistance=float(
+                analysis.resistance
+            ),
 
             reasons=list(
-                result.reasons
+                analysis.reasons
             ),
 
             trend_1m=trend_1m,
+
             trend_5m=trend_5m,
+
             trend_15m=trend_15m,
 
-            momentum=momentum,
+            momentum=(
+                "UP"
+                if analysis.direction
+                == "CALL"
+                else "DOWN"
+            ),
 
-            volatility=float(atr),
+            volatility=float(
+                atr
+            ),
 
             last_update=now,
-            expires_at=expires_at,
+
+            expires_at=(
+                now
+                + self.signal_ttl_seconds
+            ),
 
             result="PENDING",
 
-            confirmations=confirmations,
+            confirmations=1,
         )
 
         return signal
 
     # ========================================================
-    # SAVE SIGNAL
+    # SCAN ONE PAIR
     # ========================================================
 
-    def save_signal(
+    def scan_pair(
+        self,
+        pair: str,
+    ) -> Optional[FutureSignal]:
+
+        try:
+
+            candles_1m = (
+                self.api_client
+                .get_candles(
+                    pair,
+                    interval="1m",
+                    limit=100,
+                )
+            )
+
+            if len(candles_1m) < 20:
+                return None
+
+            candles_5m = (
+                self.api_client
+                .get_candles(
+                    pair,
+                    interval="5m",
+                    limit=100,
+                )
+            )
+
+            candles_15m = (
+                self.api_client
+                .get_candles(
+                    pair,
+                    interval="15m",
+                    limit=100,
+                )
+            )
+
+            return self.create_signal(
+                pair,
+                candles_1m,
+                candles_5m,
+                candles_15m,
+            )
+
+        except Exception as error:
+
+            print(
+                f"Scan error {pair}:",
+                error
+            )
+
+            return None
+
+    # ========================================================
+    # STORE SIGNAL
+    # ========================================================
+
+    def store_signal(
         self,
         signal: FutureSignal,
     ):
 
-        key = self.signal_key(
-            signal.pair,
-            signal.market,
+        key = (
+            f"{signal.market}:"
+            f"{signal.pair}"
         )
 
-        # Confirmed signals
-        if signal.status == "CONFIRMED":
+        old = (
+            self.future_signals
+            .get(key)
+        )
 
-            self.confirmed_signals[key] = signal
+        if old:
 
-            self.future_signals.pop(
-                key,
-                None,
+            signal.confirmations = (
+                old.confirmations + 1
             )
 
-        else:
+        self.future_signals[key] = (
+            signal
+        )
 
-            self.future_signals[key] = signal
+        # Keep history
+        self.history.insert(
+            0,
+            signal
+        )
 
-            self.confirmed_signals.pop(
-                key,
-                None,
+        # Limit history
+        if len(self.history) > 500:
+            self.history = (
+                self.history[:500]
             )
 
-        # Limit future signals
-        if (
-            len(self.future_signals)
-            > self.max_future_signals
+    # ========================================================
+    # REMOVE EXPIRED SIGNALS
+    # ========================================================
+
+    def cleanup_expired(self):
+
+        now = int(
+            time.time()
+        )
+
+        expired = []
+
+        for key, signal in (
+            self.future_signals.items()
         ):
 
-            oldest_key = min(
-                self.future_signals,
-                key=lambda k:
-                    self.future_signals[k].signal_time,
-            )
+            if (
+                signal.expires_at
+                and now > signal.expires_at
+            ):
 
-            self.future_signals.pop(
-                oldest_key,
-                None,
-            )
+                expired.append(key)
+
+        for key in expired:
+
+            del self.future_signals[
+                key
+            ]
 
     # ========================================================
-    # SCAN ONE MARKET
+    # SCAN ALL
     # ========================================================
 
-    async def scan_market(
-        self,
-        market: str,
-    ):
+    def scan_once(self):
 
-        if market == "LIVE":
-            if not self.live_enabled:
-                return
+        pairs = self.get_pairs()
 
-        if market == "OTC":
-            if not self.otc_enabled:
-                return
+        self.scan_count += 1
 
-        pairs = self.get_pairs(
-            market
+        self.last_scan = int(
+            time.time()
         )
 
         if not pairs:
             return
 
-        # Don't hammer the API
-        semaphore = asyncio.Semaphore(5)
+        for pair in pairs:
 
-        async def scan_pair(pair):
+            signal = self.scan_pair(
+                pair
+            )
 
-            async with semaphore:
+            if signal:
 
-                try:
-
-                    signal = await self.analyze_pair(
-                        pair,
-                        market,
-                    )
-
-                    if signal:
-                        self.save_signal(
-                            signal
-                        )
-
-                except Exception as error:
-
-                    print(
-                        f"Scan error "
-                        f"{market} {pair}: "
-                        f"{error}"
-                    )
-
-        await asyncio.gather(
-            *[
-                scan_pair(pair)
-                for pair in pairs
-            ],
-            return_exceptions=True,
-        )
-
-    # ========================================================
-    # EXPIRE SIGNALS
-    # ========================================================
-
-    def cleanup_expired(self):
-
-        now = int(time.time())
-
-        expired = []
-
-        for key, signal in list(
-            self.future_signals.items()
-        ):
-
-            if (
-                signal.expires_at > 0
-                and now >= signal.expires_at
-            ):
-
-                expired.append(
-                    (
-                        key,
-                        signal,
-                    )
+                self.store_signal(
+                    signal
                 )
 
-        for key, signal in expired:
-
-            self.history.append(
-                signal
-            )
-
-            self.future_signals.pop(
-                key,
-                None,
-            )
-
-        # Keep history under control
-        if len(self.history) > 500:
-
-            self.history = (
-                self.history[-500:]
-            )
-
-    # ========================================================
-    # FULL SCAN
-    # ========================================================
-
-    async def scan_once(self):
-
-        self.scan_count += 1
-        self.last_scan = int(
-            time.time()
-        )
-
-        await asyncio.gather(
-
-            self.scan_market("LIVE"),
-
-            self.scan_market("OTC"),
-
-            return_exceptions=True,
-        )
+            # Prevent one bad pair from
+            # stopping the entire scanner.
+            continue
 
         self.cleanup_expired()
 
     # ========================================================
-    # START
+    # BACKGROUND LOOP
     # ========================================================
 
-    async def start(self):
-
-        if self.running:
-            return
+    async def run(self):
 
         self.running = True
-
-        print(
-            "Market scanner started."
-        )
 
         while self.running:
 
             try:
 
-                await self.scan_once()
+                await asyncio.to_thread(
+                    self.scan_once
+                )
 
             except Exception as error:
 
                 print(
-                    f"Scanner error: {error}"
+                    "Scanner loop error:",
+                    error
                 )
 
             await asyncio.sleep(
@@ -750,19 +605,7 @@ class MarketScanner:
             )
 
     # ========================================================
-    # STOP
-    # ========================================================
-
-    async def stop(self):
-
-        self.running = False
-
-        print(
-            "Market scanner stopped."
-        )
-
-    # ========================================================
-    # BACKGROUND START
+    # START
     # ========================================================
 
     def start_background(self):
@@ -774,39 +617,49 @@ class MarketScanner:
 
             loop = asyncio.get_running_loop()
 
-            self._task = loop.create_task(
-                self.start()
-            )
-
         except RuntimeError:
 
-            self._task = None
+            raise RuntimeError(
+                "Scanner must be started "
+                "inside an active event loop"
+            )
+
+        self._task = (
+            loop.create_task(
+                self.run()
+            )
+        )
 
     # ========================================================
-    # BACKGROUND STOP
+    # STOP
     # ========================================================
 
-    async def stop_background(self):
+    async def stop(self):
 
         self.running = False
 
         if self._task:
 
             try:
+
                 await self._task
+
             except asyncio.CancelledError:
+
                 pass
 
             self._task = None
 
     # ========================================================
-    # FUTURE SIGNAL LIST
+    # FUTURE SIGNALS
     # ========================================================
 
     def get_future_signals(
         self,
         market: Optional[str] = None,
-    ) -> List[Dict]:
+    ):
+
+        self.cleanup_expired()
 
         signals = list(
             self.future_signals.values()
@@ -814,10 +667,13 @@ class MarketScanner:
 
         if market:
 
+            market = market.upper()
+
             signals = [
                 signal
                 for signal in signals
-                if signal.market == market
+                if signal.market
+                == market
             ]
 
         signals.sort(
@@ -828,97 +684,106 @@ class MarketScanner:
 
         return [
             signal.to_dict()
-            for signal in signals
+            for signal in signals[
+                :self.max_future_signals
+            ]
         ]
 
     # ========================================================
-    # CONFIRMED SIGNAL LIST
+    # CONFIRMED SIGNALS
     # ========================================================
 
     def get_confirmed_signals(
         self,
         market: Optional[str] = None,
-    ) -> List[Dict]:
+    ):
 
-        signals = list(
-            self.confirmed_signals.values()
-        )
+        signals = [
+            signal
+            for signal in self.history
+            if signal.status
+            == "CONFIRMED"
+        ]
 
         if market:
+
+            market = market.upper()
 
             signals = [
                 signal
                 for signal in signals
-                if signal.market == market
+                if signal.market
+                == market
             ]
-
-        signals.sort(
-            key=lambda signal:
-                signal.score,
-            reverse=True,
-        )
 
         return [
             signal.to_dict()
-            for signal in signals
+            for signal in signals[:100]
         ]
 
     # ========================================================
     # STATISTICS
     # ========================================================
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self):
 
-        total = self.total_trades
-        wins = self.wins
-        losses = self.losses
+        completed = [
+            signal
+            for signal in self.history
+            if signal.result
+            in ("WIN", "LOSS")
+        ]
 
-        if total > 0:
+        wins = sum(
+            1
+            for signal in completed
+            if signal.result == "WIN"
+        )
 
-            accuracy = (
-                wins / total
-            ) * 100
+        losses = sum(
+            1
+            for signal in completed
+            if signal.result == "LOSS"
+        )
 
-        else:
+        total = len(completed)
 
-            accuracy = 0.0
+        accuracy = (
+            round(
+                wins / total * 100,
+                2,
+            )
+            if total
+            else 0.0
+        )
 
         return {
             "total_trades": total,
             "wins": wins,
             "losses": losses,
-            "accuracy": round(
-                accuracy,
-                2,
-            ),
-            "scan_count": self.scan_count,
-            "last_scan": self.last_scan,
+            "accuracy": accuracy,
         }
 
     # ========================================================
     # STATUS
     # ========================================================
 
-    def get_status(self) -> Dict:
+    def get_status(self):
 
         return {
             "running": self.running,
-
             "live_enabled":
                 self.live_enabled,
-
             "otc_enabled":
                 self.otc_enabled,
-
-            "future_signals":
-                len(self.future_signals),
-
-            "confirmed_signals":
-                len(self.confirmed_signals),
-
+            "active_signals":
+                len(
+                    self.future_signals
+                ),
             "scan_count":
                 self.scan_count,
-
             "last_scan":
                 self.last_scan,
+            "data_api":
+                self.api_client.status(),
         }
