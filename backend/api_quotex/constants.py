@@ -6,7 +6,13 @@ from typing import List, Dict, Any, Optional
 
 logger.remove()
 log_filename = f"log-{time.strftime('%Y-%m-%d')}.txt"
-logger.add(log_filename, level="INFO", encoding="utf-8", backtrace=True, diagnose=True)
+logger.add(
+    log_filename,
+    level="INFO",
+    encoding="utf-8",
+    backtrace=True,
+    diagnose=True,
+)
 
 ASSETS: Dict[str, int] = {
     "ADAUSD_otc": 376,
@@ -105,45 +111,99 @@ ASSETS: Dict[str, int] = {
     "AXSUSD_otc": 380,
 }
 
-def update_assets_from_api(api_assets: List[Dict[str, Any]]) -> None:
+
+def update_assets_from_api(
+    api_assets: List[Dict[str, Any]]
+) -> None:
+
     global ASSETS
+
     new_assets: Dict[str, int] = {}
+
     for asset_data in api_assets:
-        symbol = str(asset_data.get("symbol"))
-        asset_id = int(asset_data.get("id", 0))
+
+        symbol = str(
+            asset_data.get("symbol")
+        )
+
+        asset_id = int(
+            asset_data.get("id", 0)
+        )
+
         if symbol and asset_id:
             new_assets[symbol] = asset_id
+
     ASSETS.update(new_assets)
-    logger.info(f"Updated ASSETS dictionary with {len(new_assets)} assets")
+
+    logger.info(
+        f"Updated ASSETS dictionary with "
+        f"{len(new_assets)} assets"
+    )
+
 
 class Regions:
+
     _REGIONS: Dict[str, str] = {
-        "DEMO": "wss://ws2.qxbroker.com/socket.io/?EIO=3&transport=websocket",
-        "LIVE": "wss://ws2.qxbroker.com/socket.io/?EIO=3&transport=websocket",
+
+        "DEMO":
+            "wss://ws2.qxbroker.com/"
+            "socket.io/?EIO=3&transport=websocket",
+
+        "LIVE":
+            "wss://ws2.qxbroker.com/"
+            "socket.io/?EIO=3&transport=websocket",
     }
 
     @classmethod
-    def get_all(cls, randomize: bool = True) -> List[str]:
-        urls = list(cls._REGIONS.values())
+    def get_all(
+        cls,
+        randomize: bool = True
+    ) -> List[str]:
+
+        urls = list(
+            cls._REGIONS.values()
+        )
+
         if randomize:
             random.shuffle(urls)
+
         return urls
 
     @classmethod
-    def get_all_regions(cls) -> Dict[str, str]:
+    def get_all_regions(
+        cls
+    ) -> Dict[str, str]:
+
         return cls._REGIONS.copy()
 
     @classmethod
-    def get_region(cls, region_name: str) -> Optional[str]:
-        return cls._REGIONS.get(region_name.upper())
+    def get_region(
+        cls,
+        region_name: str
+    ) -> Optional[str]:
+
+        return cls._REGIONS.get(
+            region_name.upper()
+        )
 
     @classmethod
-    def get_demo_regions(cls) -> List[str]:
-        return [url for name, url in cls._REGIONS.items() if "DEMO" in name]
+    def get_demo_regions(
+        cls
+    ) -> List[str]:
+
+        return [
+            url
+            for name, url
+            in cls._REGIONS.items()
+            if "DEMO" in name
+        ]
+
 
 REGIONS = Regions()
 
+
 TIMEFRAMES: Dict[str, int] = {
+
     "30s": 30,
     "1m": 60,
     "2m": 120,
@@ -159,27 +219,54 @@ TIMEFRAMES: Dict[str, int] = {
     "4h": 14400,
 }
 
+
 CONNECTION_SETTINGS: Dict[str, float] = {
+
     "ping_interval": 25.0,
     "ping_timeout": 5.0,
     "close_timeout": 10.0,
+
     "max_reconnect_attempts": 5,
+
     "reconnect_initial_delay": 1.0,
     "reconnect_max_delay": 15.0,
     "reconnect_factor": 1.8,
+
     "handshake_timeout": 10.0,
     "receive_timeout": 30.0,
+
     "tick_interval": 15.0,
     "message_timeout": 60.0,
 }
 
+
+API_LIMITS: Dict[str, float] = {
+
+    "min_order_amount": 1.0,
+    "max_order_amount": 50000.0,
+
+    "min_duration": 30,
+    "max_duration": 14400,
+
+    "max_concurrent_orders": 10,
+
+    "rate_limit": 100,
+}
+
+
 DEFAULT_HEADERS: Dict[str, str] = {
-    "User-Agent": (
+
+    "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0.0.0 Safari/537.36"
-    ),
-    "Origin": "https://qxbroker.com",
-    "Referer": "https://qxbroker.com/",
-    "Accept-Language": "en-US,en;q=0.9",
+        "Chrome/125.0.0.0 Safari/537.36",
+
+    "Origin":
+        "https://qxbroker.com",
+
+    "Referer":
+        "https://qxbroker.com/",
+
+    "Accept-Language":
+        "en-US,en;q=0.9",
 }
